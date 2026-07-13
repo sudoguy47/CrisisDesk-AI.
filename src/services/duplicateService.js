@@ -1,44 +1,71 @@
 const Report = require('../models/Report');
 
 function tokenize(text) {
-  return text.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  return text.toLowerCase()
+    .replace(/[^\w\s\u0980-\u09FF]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 2);
 }
 
-function jaccardSimilarity(text1, text2) {
-  const set1 = new Set(tokenize(text1));
-  const set2 = new Set(tokenize(text2));
-  const intersection = new Set([...set1].filter(x => set2.has(x)));
-  const union = new Set([...set1, ...set2]);
-  return union.size === 0 ? 0 : intersection.size / union.size;
+function textToVector(text) {
+  const tokens = tokenize(text);
+  const vector = {};
+  tokens.forEach(token => { vector[token] = (vector[token] || 0) + 1; });
+  return vector;
+}
+
+function cosineSimilarity(vecA, vecB) {
+  const allKeys = new Set([...Object.keys(vecA), ...Object.keys(vecB)]);
+  let dotProduct = 0, magA = 0, magB = 0;
+  allKeys.forEach(key => {
+    const a = vecA[key] || 0, b = vecB[key] || 0;
+    dotProduct += a * b;
+    magA += a * a;
+    magB += b * b;
+  });
+  if (magA === 0 || magB === 0) return 0;
+  return dotProduct / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
 function locationSimilarity(loc1, loc2) {
-  const a = loc1.toLowerCase().trim();
-  const b = loc2.toLowerCase().trim();
+  const a = loc1.toLowerCase().trim(), b = loc2.toLowerCase().trim();
   if (a === b) return 1;
-  if (a.includes(b) || b.includes(a)) return 0.8;
-  return jaccardSimilarity(a, b);
+  if (a.includes(b) || b.includes(a)) return 0.85;
+  const set1 = new Set(a.split(/\s+/)), set2 = new Set(b.split(/\s+/));
+  const inter = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  return union.size === 0 ? 0 : inter.size / union.size;
+}
+
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 exports.findPossibleDuplicate = async (newReport) => {
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   
+  const locationTokens = newReport.location
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(escapeRegex)
+    .join('|');
+
   const candidates = await Report.find({
     createdAt: { $gte: twentyFourHoursAgo },
     $or: [
       { category: newReport.category },
-      { location: { $regex: new RegExp(newReport.location.split(/\s+/).slice(0, 2).join('|'), 'i') } }
+      { location: { $regex: new RegExp(locationTokens, 'i') } }
     ]
-  }).sort({ createdAt: -1 }).limit(10);
+  }).sort({ createdAt: -1 }).limit(15);
   
-  let bestMatch = null;
-  let bestScore = 0;
+  const newDescVector = textToVector(newReport.description);
+  let bestMatch = null, bestScore = 0;
   
   for (const candidate of candidates) {
     const locSim = locationSimilarity(newReport.location, candidate.location);
     const catMatch = candidate.category === newReport.category ? 1 : 0;
-    const descSim = jaccardSimilarity(newReport.description, candidate.description);
-    const score = (locSim * 0.45) + (catMatch * 0.25) + (descSim * 0.30);
+    const descSim = cosineSimilarity(newDescVector, textToVector(candidate.description));
+    const score = (locSim * 0.40) + (catMatch * 0.20) + (descSim * 0.40);
     
     if (score > bestScore) {
       bestScore = score;
@@ -46,19 +73,13 @@ exports.findPossibleDuplicate = async (newReport) => {
     }
   }
   
-  const threshold = 0.68;
-  
-  if (bestMatch && bestScore >= threshold) {
+  if (bestMatch && bestScore >= 0.65) {
     return {
       possibleDuplicate: true,
       matchedReportId: bestMatch._id,
-      score: bestScore
+      score: parseFloat(bestScore.toFixed(3))
     };
   }
   
-  return {
-    possibleDuplicate: false,
-    matchedReportId: null,
-    score: 0
-  };
+  return { possibleDuplicate: false, matchedReportId: null, score: 0 };
 };

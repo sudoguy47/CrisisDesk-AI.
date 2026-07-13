@@ -83,9 +83,12 @@ exports.getReports = async (req, res) => {
       data: reports
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server Error.' });
-  }
+  console.error('Create report error:', error);
+  res.status(500).json({
+    success: false,
+    message: 'Failed to submit report. Please try again.'
+  });
+}
 };
 
 exports.getReportById = async (req, res) => {
