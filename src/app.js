@@ -1,19 +1,25 @@
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
-const connectDB = require('./config/db');
+const morgan = require('morgan');
 const reportRoutes = require('./routes/reportRoutes');
-
-dotenv.config();
-connectDB();
+const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
-app.use(express.json());
+
 app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
+
+app.get('/health', (req, res) => {
+  res.json({ success: true, message: 'CrisisDesk API is healthy' });
+});
 
 app.use('/api/reports', reportRoutes);
 
-app.get('/', (req, res) => res.json({ message: 'API Running' }));
+app.use(notFoundHandler);
+app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+module.exports = app;

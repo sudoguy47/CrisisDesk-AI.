@@ -1,27 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  createReport, 
-  getReports, 
-  getSingleReport, 
-  updateStatus, 
-  deleteReport, 
-  getStats 
+const {
+  createReport,
+  getReports,
+  getReportById,
+  updateReportStatus,
+  deleteReport,
+  getStatsSummary
 } = require('../controllers/reportController');
 
-const { validateCreateReport, validateStatusUpdate } = require('../middleware/validateRequest');
+const {
+  validateCreateReport,
+  validateStatusUpdate,
+  validateReportQuery
+} = require('../middleware/validateRequest');
 
-// ১. স্ট্যাটস রাউট (আইডি রাউটের উপরে থাকতে হবে)
-router.get('/stats/summary', getStats);
-router.get('/stats', getStats);
+// IMPORTANT: /stats/summary MUST be before /:id
+router.get('/stats/summary', getStatsSummary);
 
-// ২. সাধারণ রাউট (এগুলো একদম আলাদা থাকবে)
-router.get('/', getReports);
 router.post('/', validateCreateReport, createReport);
+router.get('/', validateReportQuery, getReports);
 
-// ৩. আইডি রাউট (আইডি রাউটগুলো সবার শেষে থাকবে)
-router.get('/:id', getSingleReport);
+router.get('/:id', getReportById);
+router.patch('/:id/status', validateStatusUpdate, updateReportStatus);
 router.delete('/:id', deleteReport);
-router.patch('/:id', validateStatusUpdate, updateStatus);
 
 module.exports = router;
